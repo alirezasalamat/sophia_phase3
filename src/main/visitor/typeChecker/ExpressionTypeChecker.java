@@ -24,6 +24,8 @@ import main.symbolTable.utils.graph.Graph;
 import main.visitor.Visitor;
 import main.symbolTable.SymbolTable;
 
+import java.util.ArrayList;
+
 
 public class ExpressionTypeChecker extends Visitor<Type> {
     private final Graph<String> classHierarchy;
@@ -47,6 +49,32 @@ public class ExpressionTypeChecker extends Visitor<Type> {
     private boolean isLValue(Expression exp){
         return exp instanceof Identifier || exp instanceof ListAccessByIndex ||
                 exp instanceof ObjectOrListMemberAccess;
+    }
+
+    private boolean areParametersTypeCorrespondence(ArrayList<Type> formalTypes , ArrayList<Type> actualTypes )
+    {
+        boolean paramProfileCorrespondance = true;
+        if (actualTypes.size() != formalTypes.size())
+            paramProfileCorrespondance = false;
+        else
+            for (int i = 0; i < actualTypes.size(); i++) {
+                Type actualArgType = actualTypes.get(i);
+                Type formalArgType = formalTypes.get(i);
+                paramProfileCorrespondance = isFirstSubTypeOfSecond(
+                        actualArgType, formalArgType
+                );
+            }
+        return paramProfileCorrespondance;
+    }
+
+    public boolean isFirstSubTypeOfSecond(Type first, Type second)
+    {
+        if (!second.equals(first))
+            return (second instanceof ClassType
+                    && first instanceof ClassType) &&
+                    classHierarchy.isSecondNodeAncestorOf(first.toString()
+                            , second.toString());
+        return true;
     }
 
 
@@ -181,12 +209,7 @@ public class ExpressionTypeChecker extends Visitor<Type> {
     @Override
     public Type visit(Identifier identifier) {
         try {
-            SymbolTable xx = SymbolTable.top;
-            VarSymbolTableItem xxx = ((VarSymbolTableItem) SymbolTable.top.get(VarSymbolTableItem.var_modifier + identifier.getName()));
-            Type x4 = ((VarSymbolTableItem) SymbolTable.top().get(VarSymbolTableItem.var_modifier + identifier.getName()))
-                    .getType();
-            return ((VarSymbolTableItem) SymbolTable.top().get(VarSymbolTableItem.var_modifier + identifier.getName()))
-                    .getType();
+
         }
     }
 
@@ -219,22 +242,23 @@ public class ExpressionTypeChecker extends Visitor<Type> {
                     MethodSymbolTableItem calledMethod = (MethodSymbolTableItem) currentClass.getClassSymbolTable()
                             .getItem(MethodSymbolTableItem.START_KEY + methodCall.getInstance().toString(), false);
 
-                    List<Type> actualParamsTypes = methodCall.getArgs().stream().map(a -> a.accept(this))
-                            .collect(Collectors.toList());
-                    List<Type> formalParamsTypes = calledMethod.getArgumentsTypes();
-                    if (!areParametersTypeCorrespondence(formalParamsTypes,actualParamsTypes))
-                        throw new ItemNotFoundException();
-                    if (calledMethod.getAccessModifier() == AccessModifier.ACCESS_MODIFIER_PRIVATE
-                            && !(methodCall.getInstance() instanceof Self))
-                        methodCall.addError(
-                                new IllegalAccessToMethod( calledMethod.getName() , currentClass.getName(), methodCall.line , methodCall.col) );
+                    ArrayList<Expression> actualParams = methodCall.getArgs();
+                    ArrayList<Type> actualParamsTypes = new ArrayList<>();
+                    for(Expression actualParam : actualParams){
+                        Type t = actualParam.accept(this);
+                        actualParamsTypes.add(t);
+                    }
+                    ArrayList<Type> formalParamsTypes = calledMethod.getArgTypes();
+                    if (!areParametersTypeCorrespondence(formalParamsTypes,actualParamsTypes)){
+                        methodCall.addError(new MethodCallNotMatchDefinition(methodCall.getLine()));
+                    }
                     return calledMethod.getReturnType();
                 } catch (ItemNotFoundException methodNotFound) {
                     methodCall.addError( new MemberNotAvailableInClass( methodCall.getLine(), methodCall.getInstance().toString() , className ));
                     return new NoType();
                 }
             } catch (ItemNotFoundException classNotFound) {
-                methodCall.addError( new ClassNotDeclaredException(className, methodCall.line , methodCall.col));
+                methodCall.addError( new ClassNotDeclared(methodCall.getLine(), className));
                 return new NoType();
             }
         }
@@ -248,6 +272,37 @@ public class ExpressionTypeChecker extends Visitor<Type> {
             newClassInstance.addError(new ClassNotDeclared(newClassInstance.getLine(), className));
             return new NoType();
         }
+
+        try {
+            ClassSymbolTableItem currentClass = (ClassSymbolTableItem) SymbolTable.root
+                    .getItem(ClassSymbolTableItem.START_KEY + className, true);
+            try {
+                MethodSymbolTableItem calledMethod = (MethodSymbolTableItem) currentClass.getClassSymbolTable()
+                        .getItem(MethodSymbolTableItem.START_KEY + className, false);
+
+                ArrayList<Expression> actualParams = newClassInstance.getArgs();
+                ArrayList<Type> actualParamsTypes = new ArrayList<>();
+                for(Expression actualParam : actualParams){
+                    Type t = actualParam.accept(this);
+                    actualParamsTypes.add(t);
+                }
+                ArrayList<Type> formalParamsTypes = calledMethod.getArgTypes();
+                if (!areParametersTypeCorrespondence(formalParamsTypes,actualParamsTypes)){
+                    newClassInstance.addError(new ConstructorArgsNotMatchDefinition(newClassInstance));
+                }
+
+            } catch (ItemNotFoundException methodNotFound) {
+                ArrayList<Expression> actualParams = newClassInstance.getArgs();
+                if(!actualParams.isEmpty()) {
+                    newClassInstance.addError(new ConstructorArgsNotMatchDefinition(newClassInstance));
+                    return new NoType();
+                }
+            }
+        } catch (ItemNotFoundException classNotFound) {
+            newClassInstance.addError( new ClassNotDeclared(newClassInstance.getLine(), className));
+            return new NoType();
+        }
+
         return newClassInstance.getClassType();
     }
 

@@ -174,13 +174,27 @@ public class TypeChecker extends Visitor<Void> {
 
     @Override
     public Void visit(FieldDeclaration fieldDeclaration) {
-        //TODO
+        fieldDeclaration.getVarDeclaration().accept(this);
         return null;
     }
 
     @Override
     public Void visit(VarDeclaration varDeclaration) {
+        Type t = varDeclaration.getType();
 
+        if(t instanceof ListType){
+            if(((ListType) t).getElementsTypes().isEmpty()){
+                varDeclaration.addError(new CannotHaveEmptyList(varDeclaration.getLine()));
+            }
+        }
+
+        if(!(t instanceof IntType) && !(t instanceof BoolType) && !(t instanceof StringType)
+            && !(t instanceof ListType) && !(t instanceof FptrType)){
+            String className = varDeclaration.getType().toString();
+            if( !classHierarchy.doesGraphContainNode(className)) {
+                varDeclaration.addError(new ClassNotDeclared(varDeclaration.getLine(), className));
+            }
+        }
         return null;
     }
 
