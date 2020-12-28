@@ -217,7 +217,8 @@ public class ExpressionTypeChecker extends Visitor<Type> {
                         .getItem(ClassSymbolTableItem.START_KEY + className, true);
                 try {
                     MethodSymbolTableItem calledMethod = (MethodSymbolTableItem) currentClass.getClassSymbolTable()
-                            .getItem(MethodSymbolTableItem.START_KEY + methodCall.);
+                            .getItem(MethodSymbolTableItem.START_KEY + methodCall.getInstance().toString(), false);
+
                     List<Type> actualParamsTypes = methodCall.getArgs().stream().map(a -> a.accept(this))
                             .collect(Collectors.toList());
                     List<Type> formalParamsTypes = calledMethod.getArgumentsTypes();
@@ -229,12 +230,12 @@ public class ExpressionTypeChecker extends Visitor<Type> {
                                 new IllegalAccessToMethod( calledMethod.getName() , currentClass.getName(), methodCall.line , methodCall.col) );
                     return calledMethod.getReturnType();
                 } catch (ItemNotFoundException methodNotFound) {
-                    methodCall.addError( new MethodNotDeclared(methodCall.getMethodName().getName() , className , methodCall.line , methodCall.col ));
-                    return new Undefined();
+                    methodCall.addError( new MemberNotAvailableInClass( methodCall.getLine(), methodCall.getInstance().toString() , className ));
+                    return new NoType();
                 }
             } catch (ItemNotFoundException classNotFound) {
                 methodCall.addError( new ClassNotDeclaredException(className, methodCall.line , methodCall.col));
-                return new Undefined();
+                return new NoType();
             }
         }
         return null;
