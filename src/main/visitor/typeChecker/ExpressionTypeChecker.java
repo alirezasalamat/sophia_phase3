@@ -208,9 +208,23 @@ public class ExpressionTypeChecker extends Visitor<Type> {
 
     @Override
     public Type visit(Identifier identifier) {
+        String className = identifier.getClass().getName();
         try {
+            ClassSymbolTableItem currentClass = (ClassSymbolTableItem) SymbolTable.root
+                    .getItem(ClassSymbolTableItem.START_KEY + className, true);
+            try {
+                FieldSymbolTableItem calledMethod = (FieldSymbolTableItem) currentClass.getClassSymbolTable()
+                        .getItem(FieldSymbolTableItem.START_KEY + identifier.getName(), true);
 
+            } catch (ItemNotFoundException methodNotFound) {
+                identifier.addError( new VarNotDeclared( identifier.getLine(), identifier.getName() ));
+                return new NoType();
+            }
+        } catch (ItemNotFoundException classNotFound) {
+            identifier.addError( new ClassNotDeclared(identifier.getLine(), className));
+            return new NoType();
         }
+
     }
 
     @Override
