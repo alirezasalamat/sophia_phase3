@@ -1,0 +1,13 @@
+class A 
+{
+	x : B
+	def f()
+	{
+		this.x.y
+}
+
+class B
+{
+	y : int
+}
+

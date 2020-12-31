@@ -1,6 +1,9 @@
 package main.visitor.typeChecker;
 
 import main.ast.nodes.declaration.classDec.ClassDeclaration;
+import main.ast.nodes.declaration.classDec.classMembersDec.FieldDeclaration;
+import main.ast.nodes.declaration.classDec.classMembersDec.MethodDeclaration;
+import main.ast.nodes.declaration.variableDec.VarDeclaration;
 import main.ast.nodes.expression.*;
 import main.ast.nodes.expression.values.ListValue;
 import main.ast.nodes.expression.values.NullValue;
@@ -12,6 +15,7 @@ import main.ast.types.NoType;
 import main.ast.types.NullType;
 import main.ast.types.Type;
 import main.ast.types.functionPointer.FptrType;
+import main.ast.types.list.ListNameType;
 import main.ast.types.list.ListType;
 import main.ast.types.single.BoolType;
 import main.ast.types.single.ClassType;
@@ -30,7 +34,10 @@ import java.util.ArrayList;
 public class ExpressionTypeChecker extends Visitor<Type> {
     private final Graph<String> classHierarchy;
     public String currentClassName;
-    private String currentMethodName;
+    public String previousClassName;
+    public String currentMethodName;
+    public boolean in_methodCallStatement = false;
+    public boolean in_method = false;
 
     public ExpressionTypeChecker(Graph<String> classHierarchy) {
         this.classHierarchy = classHierarchy;
@@ -53,27 +60,45 @@ public class ExpressionTypeChecker extends Visitor<Type> {
 
     private boolean areParametersTypeCorrespondence(ArrayList<Type> formalTypes , ArrayList<Type> actualTypes )
     {
-        boolean paramProfileCorrespondance = true;
+        boolean x;
         if (actualTypes.size() != formalTypes.size())
-            paramProfileCorrespondance = false;
-        else
+            x = false;
+        else {
+            x = true;
             for (int i = 0; i < actualTypes.size(); i++) {
                 Type actualArgType = actualTypes.get(i);
                 Type formalArgType = formalTypes.get(i);
-                paramProfileCorrespondance = isFirstSubTypeOfSecond(
+               x = isFirstSubTypeOfSecond(
                         actualArgType, formalArgType
                 );
-            }
-        return paramProfileCorrespondance;
+                if (!x)
+                    break;
+            };
+        }
+        return x;
     }
 
     public boolean isFirstSubTypeOfSecond(Type first, Type second)
     {
-        if (!second.equals(first))
-            return (second instanceof ClassType
-                    && first instanceof ClassType) &&
-                    classHierarchy.isSecondNodeAncestorOf(first.toString()
-                            , second.toString());
+        //System.out.println(first.toString() + "  " + second.toString());
+        if (!second.equals(first)) {
+            if (second instanceof ClassType && first instanceof ClassType) {
+               return classHierarchy.isSecondNodeAncestorOf(first.toString()
+                        , second.toString());
+            }
+        }
+        if(first instanceof IntType || first instanceof NoType){
+            return !(second instanceof IntType) && !(second instanceof NoType);
+        }
+        else if(first instanceof BoolType || first instanceof NoType){
+            return !(second instanceof BoolType) && !(second instanceof NoType);
+        }
+        else if(first instanceof ListType || first instanceof NoType){
+            return !(second instanceof ListType) && !(second instanceof NoType);
+        }
+        else if(first instanceof FptrType || first instanceof NoType){
+            return !(second instanceof FptrType) && !(second instanceof NoType);
+        }
         return true;
     }
 
@@ -197,34 +222,82 @@ public class ExpressionTypeChecker extends Visitor<Type> {
     public Type visit(ObjectOrListMemberAccess objectOrListMemberAccess) {
         Expression e = objectOrListMemberAccess.getInstance();
         Identifier i = objectOrListMemberAccess.getMemberName();
+        //System.out.println(e.toString() + "   " + i.getName() + "   " + objectOrListMemberAccess.getLine());
         Type t1 = e.accept(this);
-        Type t2 = i.accept(this);
+        //Type t2 = i.accept(this);
         if(!(t1 instanceof ClassType) && !(t1 instanceof ListType)){
             objectOrListMemberAccess.addError(new MemberAccessOnNoneObjOrListType(objectOrListMemberAccess.getLine()));
             return new NoType();
         }
-        return null;
+
+        String className = currentClassName;
+        if(t1 instanceof ClassType){
+            try{
+                ClassSymbolTableItem currentClass = (ClassSymbolTableItem) SymbolTable.root
+                        .getItem(ClassSymbolTableItem.START_KEY + ((ClassType) t1).getClassName().getName(), true);
+                ArrayList<FieldDeclaration> fieldDeclarations = currentClass.getClassDeclaration().getFields();
+                ArrayList<MethodDeclaration> methodDeclarations = currentClass.getClassDeclaration().getMethods();
+                for (FieldDeclaration fieldDeclaration : fieldDeclarations) {
+                    if (i.getName().equals(fieldDeclaration.getVarDeclaration().getVarName().getName())) {
+                        return fieldDeclaration.getVarDeclaration().getType();
+                    }
+                }
+                try {
+                    MethodSymbolTableItem calledMethod = (MethodSymbolTableItem) currentClass.getClassSymbolTable()
+                            .getItem(MethodSymbolTableItem.START_KEY + i.getName(), true);
+                    return new FptrType(calledMethod.getArgTypes(), calledMethod.getReturnType());
+                }catch (ItemNotFoundException MethodNotFound){
+                    objectOrListMemberAccess.addError(new MemberNotAvailableInClass(objectOrListMemberAccess.getLine(),
+                            i.getName(), className));
+                    return new NoType();
+                }
+            }catch (ItemNotFoundException classNotFound){
+                System.out.println("goh to compiler");
+            }
+        }
+        if(t1 instanceof ListType){
+            ArrayList<ListNameType> listNameTypes = ((ListType) t1).getElementsTypes();
+            for(ListNameType l : listNameTypes){
+                if(l.getName().getName().equals(i.getName())) {
+                    return l.getType();
+                }
+            }
+            objectOrListMemberAccess.addError(new ListMemberNotFound(objectOrListMemberAccess.getLine(), i.getName()));
+            return new NoType();
+        }
+        return new NoType();
     }
 
     @Override
     public Type visit(Identifier identifier) {
-        String className = identifier.getClass().getName();
+        String className = currentClassName;
+        String methodName = currentMethodName;
         try {
             ClassSymbolTableItem currentClass = (ClassSymbolTableItem) SymbolTable.root
                     .getItem(ClassSymbolTableItem.START_KEY + className, true);
-            try {
-                FieldSymbolTableItem calledMethod = (FieldSymbolTableItem) currentClass.getClassSymbolTable()
-                        .getItem(FieldSymbolTableItem.START_KEY + identifier.getName(), true);
-
-            } catch (ItemNotFoundException methodNotFound) {
-                identifier.addError( new VarNotDeclared( identifier.getLine(), identifier.getName() ));
+            if(in_method) {
+                MethodSymbolTableItem currentMethod = (MethodSymbolTableItem) currentClass.getClassSymbolTable()
+                        .getItem(MethodSymbolTableItem.START_KEY + methodName, true);
+                ArrayList<VarDeclaration> x = currentMethod.getMethodDeclaration().getLocalVars();
+                ArrayList<VarDeclaration> y = currentMethod.getMethodDeclaration().getArgs();
+                for (VarDeclaration j : x) {
+                    if (identifier.getName().equals(j.getVarName().getName())) {
+                        return j.getType();
+                    }
+                }
+                for (VarDeclaration j : y) {
+                    if (identifier.getName().equals(j.getVarName().getName())) {
+                        return j.getType();
+                    }
+                }
+                identifier.addError(new VarNotDeclared(identifier.getLine(), identifier.getName()));
                 return new NoType();
             }
         } catch (ItemNotFoundException classNotFound) {
             identifier.addError( new ClassNotDeclared(identifier.getLine(), className));
             return new NoType();
         }
-
+        return new NoType();
     }
 
     @Override
@@ -241,39 +314,57 @@ public class ExpressionTypeChecker extends Visitor<Type> {
             listAccessByIndex.addError(new ListIndexNotInt(listAccessByIndex.getLine()));
             return new NoType();
         }
+        if(t1 instanceof ListType){
+            boolean flag = false;
+            ArrayList<ListNameType> l = ((ListType) t1).getElementsTypes();
+            Type t = l.get(0).getType();
+            for(ListNameType x : l){
+                if(!(t.equals(x.getType()))){
+                    flag = true;
+                    break;
+                }
+            }
+            if(flag){
+                if(!(e2 instanceof IntValue)){
+                    listAccessByIndex.addError(new CantUseExprAsIndexOfMultiTypeList(listAccessByIndex.getLine()));
+                    return new NoType();
+                }
+            }
+            return t;
+        }
         return null;
     }
 
     @Override
     public Type visit(MethodCall methodCall) {
         Type instanceType = methodCall.getInstance().accept(this);
-        if (instanceType instanceof ClassType) {
-            String className = ((ClassType) instanceType).getClassName().getName();
-            try {
-                ClassSymbolTableItem currentClass = (ClassSymbolTableItem) SymbolTable.root
-                        .getItem(ClassSymbolTableItem.START_KEY + className, true);
-                try {
-                    MethodSymbolTableItem calledMethod = (MethodSymbolTableItem) currentClass.getClassSymbolTable()
-                            .getItem(MethodSymbolTableItem.START_KEY + methodCall.getInstance().toString(), false);
-
-                    ArrayList<Expression> actualParams = methodCall.getArgs();
-                    ArrayList<Type> actualParamsTypes = new ArrayList<>();
-                    for(Expression actualParam : actualParams){
-                        Type t = actualParam.accept(this);
-                        actualParamsTypes.add(t);
-                    }
-                    ArrayList<Type> formalParamsTypes = calledMethod.getArgTypes();
-                    if (!areParametersTypeCorrespondence(formalParamsTypes,actualParamsTypes)){
-                        methodCall.addError(new MethodCallNotMatchDefinition(methodCall.getLine()));
-                    }
-                    return calledMethod.getReturnType();
-                } catch (ItemNotFoundException methodNotFound) {
-                    methodCall.addError( new MemberNotAvailableInClass( methodCall.getLine(), methodCall.getInstance().toString() , className ));
+        if(!(instanceType instanceof FptrType)){
+            methodCall.addError(new CallOnNoneFptrType(methodCall.getLine()));
+            return new NoType();
+        }
+        else {
+            if (!in_methodCallStatement) {
+                boolean x = false , y = false;
+                Type fptrType = ((FptrType) instanceType).getReturnType();
+                if(fptrType instanceof NullType){
+                    methodCall.addError(new CantUseValueOfVoidMethod(methodCall.getLine()));
+                    x = true;
+                }
+                ArrayList<Expression> actualParams = methodCall.getArgs();
+                ArrayList<Type> actualParamsTypes = new ArrayList<>();
+                for (Expression actualParam : actualParams) {
+                    Type t = actualParam.accept(this);
+                    actualParamsTypes.add(t);
+                }
+                ArrayList<Type> formalParamsTypes = ((FptrType) instanceType).getArgumentsTypes();
+                if (!areParametersTypeCorrespondence(formalParamsTypes, actualParamsTypes)) {
+                    methodCall.addError(new MethodCallNotMatchDefinition(methodCall.getLine()));
+                    y = true;
+                }
+                if (x || y) {
                     return new NoType();
                 }
-            } catch (ItemNotFoundException classNotFound) {
-                methodCall.addError( new ClassNotDeclared(methodCall.getLine(), className));
-                return new NoType();
+                return fptrType;
             }
         }
         return null;

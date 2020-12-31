@@ -7,6 +7,7 @@ import main.ast.nodes.declaration.classDec.classMembersDec.FieldDeclaration;
 import main.ast.nodes.declaration.classDec.classMembersDec.MethodDeclaration;
 import main.ast.nodes.declaration.variableDec.VarDeclaration;
 import main.ast.nodes.expression.*;
+import main.ast.nodes.expression.operators.BinaryOperator;
 import main.ast.nodes.expression.values.ListValue;
 import main.ast.nodes.statement.*;
 import main.ast.nodes.statement.loop.BreakStmt;
@@ -63,8 +64,36 @@ public class TypeChecker extends Visitor<Void> {
     }
 
     private boolean isLValue(Expression exp){
-        return exp instanceof Identifier || exp instanceof ListAccessByIndex ||
-                exp instanceof ObjectOrListMemberAccess;
+        return (exp instanceof Identifier || exp instanceof ListAccessByIndex ||
+                exp instanceof ObjectOrListMemberAccess);
+    }
+
+    public boolean isFirstSubTypeOfSecond(Type first, Type second)
+    {
+        //System.out.println(first.toString() + "    " + second.toString());
+        if (!second.equals(first)) {
+            if (second instanceof ClassType && first instanceof ClassType) {
+                return classHierarchy.isSecondNodeAncestorOf(first.toString()
+                        , second.toString());
+            }
+        }
+        if(first instanceof IntType || first instanceof NoType){
+            return second instanceof IntType || second instanceof NoType;
+        }
+        else if(first instanceof BoolType || first instanceof NoType){
+            return second instanceof BoolType || second instanceof NoType;
+        }
+        else if(first instanceof StringType || first instanceof NoType){
+            return second instanceof StringType || second instanceof NoType;
+        }
+        else if(first instanceof ListType || first instanceof NoType){
+            return second instanceof ListType|| second instanceof NoType;
+
+        }
+        else if(first instanceof FptrType || first instanceof NoType){
+            return second instanceof FptrType || second instanceof NoType;
+        }
+        return true;
     }
 
     @Override
@@ -84,11 +113,18 @@ public class TypeChecker extends Visitor<Void> {
 
     @Override
     public Void visit(ClassDeclaration classDeclaration) {
+        expressionTypeChecker.in_method = true;
         expressionTypeChecker.currentClassName = classDeclaration.getClassName().getName();
         currentClassName = classDeclaration.getClassName().getName();
-        String parentName = classDeclaration.getParentClassName().getName();
+        currentMethodName = classDeclaration.getClassName().getName();
+        expressionTypeChecker.currentMethodName = classDeclaration.getClassName().getName();
+        String parentName = "";
+        if(classDeclaration.getParentClassName() != null){
+            parentName = classDeclaration.getParentClassName().getName();
+        }
+
         if(currentClassName.equals("Main")){
-            if(!(parentName.equals("Main") && classDeclaration.getParentClassName() != null)){
+            if(!(parentName.equals("Main")) && (classDeclaration.getParentClassName() != null)){
                 classDeclaration.addError(new MainClassCantExtend(classDeclaration.getLine()));
             }
         }
@@ -100,10 +136,13 @@ public class TypeChecker extends Visitor<Void> {
                 classDeclaration.addError(new CannotExtendFromMainClass(classDeclaration.getParentClassName().getLine()));
             }
         }
-        ConstructorDeclaration constructorDeclaration = classDeclaration.getConstructor();
-        constructorDeclaration.accept(this);
+        ConstructorDeclaration constructorDeclaration;
+        if( classDeclaration.getConstructor() != null) {
+            constructorDeclaration = classDeclaration.getConstructor();
+            constructorDeclaration.accept(this);
+        }
         if(currentClassName.equals("Main")){
-            if(constructorDeclaration.getMethodName().getName().equals("")){
+            if(classDeclaration.getConstructor() == null){
                 classDeclaration.addError(new NoConstructorInMainClass(classDeclaration));
             }
         }
@@ -117,6 +156,7 @@ public class TypeChecker extends Visitor<Void> {
         for(FieldDeclaration fieldDeclaration : fieldDeclarations){
             fieldDeclaration.accept(this);
         }
+        expressionTypeChecker.in_method = false;
         return null;
     }
 
@@ -129,9 +169,6 @@ public class TypeChecker extends Visitor<Void> {
         }
         if(!constructorDeclaration.getArgs().isEmpty() && constructorDeclarationName.equals("Main")){
             constructorDeclaration.addError(new MainConstructorCantHaveArgs(constructorDeclaration.getLine()));
-        }
-        if(constructorDeclaration.getReturnType() instanceof NullType){
-            constructorDeclaration.addError(new CantUseValueOfVoidMethod(constructorDeclaration.getLine()));
         }
         ArrayList<VarDeclaration> args = constructorDeclaration.getArgs();
         for (VarDeclaration arg : args){
@@ -153,8 +190,9 @@ public class TypeChecker extends Visitor<Void> {
     @Override
     public Void visit(MethodDeclaration methodDeclaration) {
         //String methodDeclarationName = methodDeclaration.getMethodName().getName();
-
+        expressionTypeChecker.in_method = true;
         currentMethodName = methodDeclaration.getMethodName().getName();
+        expressionTypeChecker.currentMethodName = methodDeclaration.getMethodName().getName();
         ArrayList<VarDeclaration> args = methodDeclaration.getArgs();
         for (VarDeclaration arg : args){
             arg.accept(this);
@@ -169,6 +207,7 @@ public class TypeChecker extends Visitor<Void> {
         for(Statement statement : statements){
             statement.accept(this);
         }
+        expressionTypeChecker.in_method = false;
         return null;
     }
 
@@ -186,13 +225,31 @@ public class TypeChecker extends Visitor<Void> {
             if(((ListType) t).getElementsTypes().isEmpty()){
                 varDeclaration.addError(new CannotHaveEmptyList(varDeclaration.getLine()));
             }
+
+            ArrayList<ListNameType> listNameTypes = ((ListType) t).getElementsTypes();
+            int i, j, k = 0;
+            for(i = 0; i < listNameTypes.size() - 1; i++) {
+                for(j = i + 1; j < listNameTypes.size(); j++) {
+                    if (listNameTypes.get(i).getName().getName().equals(listNameTypes.get(j).getName().getName())
+                        && !listNameTypes.get(i).getName().getName().equals("") &&
+                            !listNameTypes.get(j).getName().getName().equals("")){
+                        varDeclaration.addError(new DuplicateListId(varDeclaration.getLine()));
+                        k = 1;
+                        break;
+                    }
+                }
+                if(k == 1)
+                    break;
+            }
         }
 
         if(!(t instanceof IntType) && !(t instanceof BoolType) && !(t instanceof StringType)
             && !(t instanceof ListType) && !(t instanceof FptrType)){
-            String className = varDeclaration.getType().toString();
-            if( !classHierarchy.doesGraphContainNode(className)) {
-                varDeclaration.addError(new ClassNotDeclared(varDeclaration.getLine(), className));
+            try {
+                ClassSymbolTableItem currentClass = (ClassSymbolTableItem) SymbolTable.root
+                        .getItem(ClassSymbolTableItem.START_KEY + ((ClassType) t).getClassName().getName(), true);
+            }catch (ItemNotFoundException classNotFound){
+                varDeclaration.addError(new ClassNotDeclared(varDeclaration.getLine(), ((ClassType) t).getClassName().getName()));
             }
         }
         return null;
@@ -200,13 +257,23 @@ public class TypeChecker extends Visitor<Void> {
 
     @Override
     public Void visit(AssignmentStmt assignmentStmt) {
-        Expression rvalue = assignmentStmt.getrValue();
         Expression lvalue = assignmentStmt.getlValue();
+        Expression rvalue = assignmentStmt.getrValue();
+        //System.out.println(rvalue.toString() + "  [[[[[[[[[[[[[[[[[[[[[[[[[[[[[");
+        //System.out.println("fffffffffff");
         Type t1 = lvalue.accept(expressionTypeChecker);
+        //System.out.println(lvalue.toString() + "   "  + lvalue.getLine());
+        //System.out.println(rvalue.toString() + "   "  + rvalue.getLine());
         Type t2 = rvalue.accept(expressionTypeChecker);
+        //System.out.println(t1.toString() + "   " + t2.toString() + "   " + assignmentStmt.getLine());
 
         if (!isLValue(lvalue)) {
             assignmentStmt.addError(new LeftSideNotLvalue(assignmentStmt.getLine()));
+        }
+
+        //System.out.println(t1.toString() + "qqqqqqqqq");
+        if(!isFirstSubTypeOfSecond(t2, t1)){
+            assignmentStmt.addError(new UnsupportedOperandType(assignmentStmt.getLine(), BinaryOperator.assign.toString()));
         }
         return null;
     }
@@ -217,7 +284,7 @@ public class TypeChecker extends Visitor<Void> {
             return null;
         ArrayList<Statement> statements = blockStmt.getStatements();
         for (Statement statement : statements)
-            statement.accept(expressionTypeChecker);
+            statement.accept(this);
         return null;
     }
 
@@ -225,17 +292,23 @@ public class TypeChecker extends Visitor<Void> {
     public Void visit(ConditionalStmt conditionalStmt) {
         Expression exp = conditionalStmt.getCondition();
         Type t = exp.accept(expressionTypeChecker);
-        if(!(t instanceof BoolType)){
+        if(!(t instanceof BoolType) && !(t instanceof NoType)){
             int line = conditionalStmt.getLine();
             conditionalStmt.addError(new ConditionNotBool(line));
+        }
+        conditionalStmt.getThenBody().accept(expressionTypeChecker);
+        if(conditionalStmt.getElseBody() != null){
+            conditionalStmt.getElseBody().accept(expressionTypeChecker);
         }
         return null;
     }
 
     @Override
     public Void visit(MethodCallStmt methodCallStmt) {
+        expressionTypeChecker.in_methodCallStatement = true;
         MethodCall methodCall = methodCallStmt.getMethodCall();
         methodCall.accept(expressionTypeChecker);
+        expressionTypeChecker.in_methodCallStatement = false;
         return null;
     }
 
@@ -243,7 +316,7 @@ public class TypeChecker extends Visitor<Void> {
     public Void visit(PrintStmt print) {
         Expression exp = print.getArg();
         Type t = exp.accept(expressionTypeChecker);
-        if(!(t instanceof StringType) && !(t instanceof BoolType) && !(t instanceof IntType)){
+        if(!(t instanceof StringType) && !(t instanceof BoolType) && !(t instanceof IntType) && !(t instanceof NoType)){
             int line = print.getLine();
             print.addError(new UnsupportedTypeForPrint(line));
         }
@@ -317,7 +390,7 @@ public class TypeChecker extends Visitor<Void> {
     public Void visit(ContinueStmt continueStmt) {
         if(!in_for){
             int line = continueStmt.getLine();
-            continueStmt.addError(new ContinueBreakNotInLoop(line, 0));
+            continueStmt.addError(new ContinueBreakNotInLoop(line, 1));
         }
         return null;
     }
@@ -330,19 +403,19 @@ public class TypeChecker extends Visitor<Void> {
         Type id = var.accept(expressionTypeChecker);
         Expression x = foreachStmt.getList();
         Type list = x.accept(expressionTypeChecker);
-        ArrayList<Expression> exp_list = ((ListValue) x).getElements();
 
         if(list instanceof ListType){
-            Type t1  = exp_list.get(0).accept(expressionTypeChecker);
-            for(Expression exp : exp_list){
-                Type t2 = exp.accept(expressionTypeChecker);
+            ArrayList<ListNameType> exp_list = ((ListType) list).getElementsTypes();
+            Type t1  = exp_list.get(0).getType();
+            for(ListNameType l : exp_list){
+                Type t2 = l.getType();
                 if(t1 != t2){
                     //flag = true;
                     foreachStmt.addError(new ForeachListElementsNotSameType(line));
                     break;
                 }
             }
-            if(t1 != id){
+            if(t1.equals(id)){
                 foreachStmt.addError(new ForeachVarNotMatchList(foreachStmt));
             }
         }
@@ -361,7 +434,7 @@ public class TypeChecker extends Visitor<Void> {
         forStmt.getInitialize().accept(this);
         Expression exp = forStmt.getCondition();
         Type t = exp.accept(expressionTypeChecker);
-        if(!(t instanceof BoolType)){
+        if(!(t instanceof BoolType) && !(t instanceof NoType)){
             int line = forStmt.getLine();
             forStmt.addError(new ConditionNotBool(line));
         }

@@ -1,4 +1,4 @@
-grammar Sophia;
+    grammar Sophia;
 
 @header{
     import main.ast.types.*;
