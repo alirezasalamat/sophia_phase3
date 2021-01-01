@@ -45,20 +45,7 @@ public class ExpressionTypeChecker extends Visitor<Type> {
         this.classHierarchy = classHierarchy;
     }
 
-    private SymbolTable getCurrentClassSymbolTable() {
-        try {
-            ClassSymbolTableItem classSymbolTableItem = (ClassSymbolTableItem)
-                    SymbolTable.root.getItem(ClassSymbolTableItem.START_KEY + this.currentClassName, true);
-            return classSymbolTableItem.getClassSymbolTable();
-        } catch (ItemNotFoundException ignored) {
-            return null;
-        }
-    }
 
-    private boolean isLValue(Expression exp){
-        return exp instanceof Identifier || exp instanceof ListAccessByIndex ||
-                exp instanceof ObjectOrListMemberAccess;
-    }
 
     private boolean areParametersTypeCorrespondence(ArrayList<Type> formalTypes , ArrayList<Type> actualTypes )
     {
@@ -81,7 +68,6 @@ public class ExpressionTypeChecker extends Visitor<Type> {
 
     public boolean isFirstSubTypeOfSecond(Type first, Type second)
     {
-        //System.out.println(first.toString() + "    " + second.toString());
         if(first instanceof NoType)
             return true;
         if(first instanceof NullType && (second instanceof ClassType || second instanceof FptrType)){
@@ -160,7 +146,6 @@ public class ExpressionTypeChecker extends Visitor<Type> {
             return new NoType();
         }
 
-        //System.out.println("qqqqqqqqqqqq    " + t1.toString() + "   " + t2.toString() + "    " + binaryExpression.getLine());
         // operator add   sub  mult  div   mod
         if (binaryOperator.equals(BinaryOperator.add) || binaryOperator.equals(BinaryOperator.sub) ||
                 binaryOperator.equals(BinaryOperator.mult) || binaryOperator.equals(BinaryOperator.div) ||
@@ -203,14 +188,12 @@ public class ExpressionTypeChecker extends Visitor<Type> {
             else if ((t1 instanceof FptrType || t2 instanceof FptrType)){
                 if((!isFirstSubTypeOfSecond(t1, t2) || !isFirstSubTypeOfSecond(t2, t1))
                     &&!(t1 instanceof NullType) && !(t2 instanceof NullType)){
-                    //System.out.println("ccccccccccccccccccc    " + binaryExpression.getLine());
                     binaryExpression.addError(new UnsupportedOperandType(binaryExpression.getLine(), binaryOperator.toString()));
                     is_lvalue = false;
                     return new NoType();
                 }
             }
             else if(!t1.toString().equals(t2.toString()) && !(t1 instanceof NoType || t2 instanceof NoType)){
-                //System.out.println("rrrrrrrrrrrr    " + binaryExpression.getLine());
                 binaryExpression.addError(new UnsupportedOperandType(binaryExpression.getLine(), binaryOperator.toString()));
                 is_lvalue = false;
                 return new NoType();
@@ -257,6 +240,11 @@ public class ExpressionTypeChecker extends Visitor<Type> {
             return new BoolType();
         }
 
+        if(binaryOperator.equals(BinaryOperator.assign)){
+            is_lvalue = false;
+            return t2;
+        }
+
         return new NoType();
     }
 
@@ -267,15 +255,10 @@ public class ExpressionTypeChecker extends Visitor<Type> {
         Expression exp = unaryExpression.getOperand();
         UnaryOperator unaryOperator = unaryExpression.getOperator();
         Type t = exp.accept(this);
-        //System.out.println("xxxxxxxxxxxxxxxxxx   " + is_lvalue + "     " + t.toString() + "     " + unaryExpression.getLine());
         boolean x = false , y = false;
-//        if(t instanceof NoType){
-//            return new NoType();
-//        }
         if(unaryOperator.equals(UnaryOperator.postdec) || unaryOperator.equals(UnaryOperator.postinc)
                 || unaryOperator.equals(UnaryOperator.predec) || unaryOperator.equals(UnaryOperator.preinc)){
             if(!is_lvalue){
-                //System.out.println("xxxxxxxxxxxxxxxxxx   " + is_lvalue + "     " + exp.toString() + "     " + unaryExpression.getLine());
                 unaryExpression.addError(new IncDecOperandNotLvalue(unaryExpression.getLine(), unaryOperator.toString()));
                 x = true;
             }
@@ -299,7 +282,7 @@ public class ExpressionTypeChecker extends Visitor<Type> {
         }
         else if(unaryOperator.equals(UnaryOperator.not)){
             is_lvalue = false;
-            //System.out.println("ccccccccccccccccccccc    " + unaryExpression.getLine());
+
             if(!(t instanceof BoolType)){
                 unaryExpression.addError(new UnsupportedOperandType(unaryExpression.getLine(), unaryOperator.toString()));
                 return new NoType();
@@ -313,14 +296,11 @@ public class ExpressionTypeChecker extends Visitor<Type> {
     public Type visit(ObjectOrListMemberAccess objectOrListMemberAccess) {
         Expression e = objectOrListMemberAccess.getInstance();
         Identifier i = objectOrListMemberAccess.getMemberName();
-        //System.out.println(e.toString() + "   " + i.getName() + "   " + objectOrListMemberAccess.getLine());
         Type t1 = e.accept(this);
-        //Type t2 = i.accept(this);
         if(!(t1 instanceof ClassType) && !(t1 instanceof ListType) && !(t1 instanceof NoType)){
             objectOrListMemberAccess.addError(new MemberAccessOnNoneObjOrListType(objectOrListMemberAccess.getLine()));
             return new NoType();
         }
-
         String className = currentClassName;
         if(t1 instanceof ClassType){
             try{
@@ -341,13 +321,16 @@ public class ExpressionTypeChecker extends Visitor<Type> {
                         return new FptrType(calledMethod.getArgTypes(), calledMethod.getReturnType());
 
                     }catch (ItemNotFoundException MemberNotFound){
+                        if(i.getName().equals(currentClass.getName())){
+                            return new FptrType(new ArrayList<>(), new NullType());
+                        }
                         objectOrListMemberAccess.addError(new MemberNotAvailableInClass(objectOrListMemberAccess.getLine(),
                                 i.getName(), currentClass.getClassDeclaration().getClassName().getName()));
                         return new NoType();
                     }
                 }
             }catch (ItemNotFoundException classNotFound){
-                System.out.println("error");
+                System.out.println("error in objectAccess");
             }
         }
         if(t1 instanceof ListType){
@@ -403,7 +386,6 @@ public class ExpressionTypeChecker extends Visitor<Type> {
         Type t2 = e2.accept(this);
         is_lvalue = temp;
         boolean  y = false, z = false;
-        //System.out.println("qqqqqqqqqqqq   "+ is_lvalue + "     " + listAccessByIndex.getLine());
         if(!(t2 instanceof IntType) && !(t2 instanceof NoType)){
             listAccessByIndex.addError(new ListIndexNotInt(listAccessByIndex.getLine()));
             y = true;
@@ -510,6 +492,7 @@ public class ExpressionTypeChecker extends Visitor<Type> {
     @Override
     public Type visit(NewClassInstance newClassInstance) {
         is_lvalue = false;
+        boolean temp;
         String className = newClassInstance.getClassType().getClassName().getName();
         try {
             ClassSymbolTableItem currentClass = (ClassSymbolTableItem) SymbolTable.root
@@ -517,11 +500,13 @@ public class ExpressionTypeChecker extends Visitor<Type> {
             try {
                 MethodSymbolTableItem calledMethod = (MethodSymbolTableItem) currentClass.getClassSymbolTable()
                         .getItem(MethodSymbolTableItem.START_KEY + className, true);
-
                 ArrayList<Expression> actualParams = newClassInstance.getArgs();
                 ArrayList<Type> actualParamsTypes = new ArrayList<>();
                 for(Expression actualParam : actualParams){
+                    temp = is_lvalue;
+                    is_lvalue = true;
                     Type t = actualParam.accept(this);
+                    is_lvalue = temp;
                     actualParamsTypes.add(t);
                 }
                 ArrayList<Type> formalParamsTypes = calledMethod.getArgTypes();
@@ -533,6 +518,12 @@ public class ExpressionTypeChecker extends Visitor<Type> {
                 ArrayList<Expression> actualParams = newClassInstance.getArgs();
                 if(!actualParams.isEmpty()) {
                     newClassInstance.addError(new ConstructorArgsNotMatchDefinition(newClassInstance));
+                    for(Expression actualParam : actualParams){
+                        temp = is_lvalue;
+                        is_lvalue = true;
+                        Type t = actualParam.accept(this);
+                        is_lvalue = temp;
+                    }
                     return new NoType();
                 }
             }

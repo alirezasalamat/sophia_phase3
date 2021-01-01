@@ -72,7 +72,6 @@ public class TypeChecker extends Visitor<Void> {
 
     public boolean isFirstSubTypeOfSecond(Type first, Type second)
     {
-        //System.out.println(first.toString() + "    " + second.toString());
         if(first instanceof NoType)
             return true;
         if(first instanceof NullType && (second instanceof ClassType || second instanceof FptrType)){
@@ -137,7 +136,6 @@ public class TypeChecker extends Visitor<Void> {
     public void listChecker(Type type, VarDeclaration varDeclaration) {
         LocalVariableSymbolTableItem local;
         FieldSymbolTableItem field;
-        //System.out.println(type.toString() + "    " + varDeclaration.getLine());
         try {
             ClassSymbolTableItem currentClass = (ClassSymbolTableItem) SymbolTable.root
                     .getItem(ClassSymbolTableItem.START_KEY + currentClassName, true);
@@ -293,7 +291,6 @@ public class TypeChecker extends Visitor<Void> {
     public void listChecker_methodReturnMethod(Type type, MethodDeclaration methodDeclaration) {
         LocalVariableSymbolTableItem local;
         FieldSymbolTableItem field;
-        //System.out.println(type.toString() + "    " + varDeclaration.getLine());
         try {
             ClassSymbolTableItem currentClass = (ClassSymbolTableItem) SymbolTable.root
                     .getItem(ClassSymbolTableItem.START_KEY + currentClassName, true);
@@ -635,14 +632,16 @@ public class TypeChecker extends Visitor<Void> {
                         .getItem(MethodSymbolTableItem.START_KEY + currentMethodName, true);
                 Type t2 = methodSymbolTableItem.getReturnType();
 
-                if(!isFirstSubTypeOfSecond(t1, t2) && !(t1 instanceof NullType) && !(t1 instanceof NoType)){
+                if(!isFirstSubTypeOfSecond(t1, t2)  && !(t1 instanceof NoType)){
                     returnStmt.addError(new ReturnValueNotMatchMethodReturnType(returnStmt));
                     return null;
                 }
             }catch (ItemNotFoundException methodNotFound){
+                System.out.println("error 1 in returnStmt");
                 return null;
             }
         } catch (ItemNotFoundException ignored) {
+            System.out.println("error 2 in returnStmt");
             return null;
         }
         return null;

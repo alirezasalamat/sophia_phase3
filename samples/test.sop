@@ -1,8 +1,22 @@
 class A 
 {
-	def list(a:int) bar() {
-        return list(a:int);
-    }
+	def void f(){
+
+	}
+	i : int;
+	def int x(q: int){
+		a:int;
+		a = this.f() = 2;
+		return 1;
+	}
+}
+
+class Main
+{
+	def Main(){
+		a : A;
+		
+	}
 }
 
 
