@@ -1,13 +1,10 @@
 class A 
 {
-	x : B
-	def f()
-	{
-		this.x.y
+	def list(a:int) bar() {
+        return list(a:int);
+    }
 }
 
-class B
-{
-	y : int
-}
+
+
 
